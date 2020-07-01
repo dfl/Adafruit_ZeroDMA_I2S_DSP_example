@@ -6,20 +6,18 @@
 #define BUFSIZE 20
 int data[BUFSIZE];
 
-const char ledPin = 13;
-
 Adafruit_ZeroDMA myDMA;
 ZeroDMAstatus    stat; // DMA status codes returned by some functions
 
-Adafruit_ZeroI2S i2s;
+Adafruit_ZeroI2S i2s; // using default pins
 
 #include "sine_wave.h"
 #define SRATE 22050
 SineOsc sine(SRATE);
 
-void fillBuffer() {  
+/*the I2S module will be expecting data interleaved LRLR*/
+void inline fillBuffer() {  
   int *ptr = (int*)data;
-  /*the I2S module will be expecting data interleaved LRLR*/
   int osc;
   for(int i=0; i<BUFSIZE/2; i++){
     osc = sine.process() >> 4;    
@@ -30,7 +28,6 @@ void fillBuffer() {
 
 void printBuffer() {
   int *ptr = (int*)data;
-  /*the I2S module will be expecting data interleaved LRLR*/
   int osc;
   Serial.print("AUDIO_BUFFER = {");
   for(int i=0; i<BUFSIZE/2; i++){
@@ -43,19 +40,17 @@ void printBuffer() {
   
 }
 
-volatile long count = 0;
-volatile bool flip = false;
+volatile long callbackCount;
 void dma_callback(Adafruit_ZeroDMA *dma) {
-  fillBuffer(); // flip ^= 1 );
-  if((count++ % 1000000) == 0)
-    digitalWrite(ledPin, flip ^= 1);
+  fillBuffer();
+  callbackCount++;
   myDMA.startJob();  
 }
 
 void setup()
 {
   Serial.begin(9600);
-  //while(!Serial);                 // Wait for Serial monitor before continuing
+  while(!Serial);                 // Wait for Serial monitor before continuing
 
   Serial.println("I2S output via DMA");
 
@@ -81,19 +76,13 @@ void setup()
       false);
   dmaDesc->BTCTRL.bit.BLOCKACT = DMA_BLOCK_ACTION_INT; //https://forums.adafruit.com/viewtopic.php?f=8&t=146979#p767883
   myDMA.loop(false);
-  pinMode(ledPin, OUTPUT);
-  delay(2000);
 
   Serial.println("Adding callback");
   myDMA.setCallback(dma_callback);
 
-  /* begin I2S on the default pins. 24 bit depth at
-   * 44100 samples per second
-   */
   i2s.begin(I2S_32_BIT, SRATE);
   i2s.enableTx();
 
-  SineTable::init();
   sine.setFrequency( 110.0 );
   fillBuffer();
   printBuffer();
@@ -104,11 +93,11 @@ void loop()
 {
   Serial.println("do other things here while your DMA runs in the background.");
 //  Serial.print("~ sine: ");
-//  Serial.print(sine.process());
+//  Serial.print(sine.getLast());
 //  Serial.print(" phase: ");
 //  Serial.println(sine.getPhase());
   Serial.print(" DMA callback count: ");
-  Serial.println(count);
+  Serial.println(callbackCount);
   
   delay(2000);
 }

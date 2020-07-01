@@ -97,13 +97,15 @@ protected:
 
 public:  
   SineOsc( int srate ) : Phasor(float(srate)) {
-//    SineTable::init();
+    SineTable::init();
   }
 
   int32_t process() {
     incPhase();
     return lastOut = SineTable::linterp(phase);
   }
+
+  int32_t getLast() { return lastOut; }
 
 };
 
