@@ -1,0 +1,114 @@
+#include <Adafruit_ZeroI2S.h>
+#include <Adafruit_ZeroDMA.h>
+#include "utility/dma.h"
+
+/* create a buffer for both the left and right channel data */
+#define BUFSIZE 20
+int data[BUFSIZE];
+
+const char ledPin = 13;
+
+Adafruit_ZeroDMA myDMA;
+ZeroDMAstatus    stat; // DMA status codes returned by some functions
+
+Adafruit_ZeroI2S i2s;
+
+#include "sine_wave.h"
+#define SRATE 22050
+SineOsc sine(SRATE);
+
+void fillBuffer() {  
+  int *ptr = (int*)data;
+  /*the I2S module will be expecting data interleaved LRLR*/
+  int osc;
+  for(int i=0; i<BUFSIZE/2; i++){
+    osc = sine.process() >> 4;    
+    *ptr++ = osc;
+    *ptr++ = osc;
+  }
+}
+
+void printBuffer() {
+  int *ptr = (int*)data;
+  /*the I2S module will be expecting data interleaved LRLR*/
+  int osc;
+  Serial.print("AUDIO_BUFFER = {");
+  for(int i=0; i<BUFSIZE/2; i++){
+    Serial.print("  L: ");
+    Serial.print( *ptr++, HEX );
+    Serial.print(" R: ");
+    Serial.println( *ptr++, HEX );
+  }
+  Serial.println("};");
+  
+}
+
+volatile long count = 0;
+volatile bool flip = false;
+void dma_callback(Adafruit_ZeroDMA *dma) {
+  fillBuffer(); // flip ^= 1 );
+  if((count++ % 1000000) == 0)
+    digitalWrite(ledPin, flip ^= 1);
+  myDMA.startJob();  
+}
+
+void setup()
+{
+  Serial.begin(9600);
+  //while(!Serial);                 // Wait for Serial monitor before continuing
+
+  Serial.println("I2S output via DMA");
+
+  Serial.println("Configuring DMA trigger");
+  myDMA.setTrigger(I2S_DMAC_ID_TX_0);
+  myDMA.setAction(DMA_TRIGGER_ACTON_BEAT);
+
+  Serial.print("Allocating DMA channel...");
+  stat = myDMA.allocate();
+  myDMA.printStatus(stat);
+
+  Serial.println("Setting up transfer");
+  DmacDescriptor *dmaDesc = myDMA.addDescriptor(
+      (void*)data,                    // move data from here
+#if defined(__SAMD51__)
+      (void *)(&I2S->TXDATA.reg), // to here (M4)
+#else
+      (void *)(&I2S->DATA[0].reg), // to here (M0+)
+#endif
+    BUFSIZE,                      // this many...
+      DMA_BEAT_SIZE_WORD,               // bytes/hword/words
+      true,                             // increment source addr?
+      false);
+  dmaDesc->BTCTRL.bit.BLOCKACT = DMA_BLOCK_ACTION_INT; //https://forums.adafruit.com/viewtopic.php?f=8&t=146979#p767883
+  myDMA.loop(false);
+  pinMode(ledPin, OUTPUT);
+  delay(2000);
+
+  Serial.println("Adding callback");
+  myDMA.setCallback(dma_callback);
+
+  /* begin I2S on the default pins. 24 bit depth at
+   * 44100 samples per second
+   */
+  i2s.begin(I2S_32_BIT, SRATE);
+  i2s.enableTx();
+
+  SineTable::init();
+  sine.setFrequency( 110.0 );
+  fillBuffer();
+  printBuffer();
+  stat = myDMA.startJob();
+}
+
+void loop()
+{
+  Serial.println("do other things here while your DMA runs in the background.");
+//  Serial.print("~ sine: ");
+//  Serial.print(sine.process());
+//  Serial.print(" phase: ");
+//  Serial.println(sine.getPhase());
+  Serial.print(" DMA callback count: ");
+  Serial.println(count);
+  
+  delay(2000);
+}
