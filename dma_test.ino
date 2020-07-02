@@ -1,9 +1,12 @@
 #include <Adafruit_ZeroI2S.h>
 #include <Adafruit_ZeroDMA.h>
 #include "utility/dma.h"
+#include <advancedSerial.h>
+
+#define DEBUG 1 // print audio vs play audio
 
 /* create a buffer for both the left and right channel data */
-#define BUFSIZE 20
+#define BUFSIZE 10
 int data[BUFSIZE];
 
 Adafruit_ZeroDMA myDMA;
@@ -20,7 +23,7 @@ void inline fillBuffer() {
   int *ptr = (int*)data;
   int osc;
   for(int i=0; i<BUFSIZE/2; i++){
-    osc = sine.process() >> 4;    
+    osc = sine.process() >> 3;
     *ptr++ = osc;
     *ptr++ = osc;
   }
@@ -47,11 +50,39 @@ void dma_callback(Adafruit_ZeroDMA *dma) {
   myDMA.startJob();  
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(9600);
   while(!Serial);                 // Wait for Serial monitor before continuing
 
+  setup_DMA();
+  i2s.begin(I2S_32_BIT, SRATE);
+  i2s.enableTx();
+
+
+//  SineTable::print();
+//  delay(2000);
+
+  sine.setFrequency( 220.0 );
+  sine.setGain(1.0);
+  if(!DEBUG) {
+    fillBuffer();
+    stat = myDMA.startJob();
+  }
+}
+
+void loop() {
+  if(DEBUG) {
+    sine.process();
+  } else {
+    Serial.println("do other things here while your DMA runs in the background.");
+    Serial.print("   DMA callback count: ");
+    Serial.println(callbackCount);
+  }
+//  delay(10);
+}
+
+
+void setup_DMA() {
   Serial.println("I2S output via DMA");
 
   Serial.println("Configuring DMA trigger");
@@ -79,25 +110,5 @@ void setup()
 
   Serial.println("Adding callback");
   myDMA.setCallback(dma_callback);
-
-  i2s.begin(I2S_32_BIT, SRATE);
-  i2s.enableTx();
-
-  sine.setFrequency( 110.0 );
-  fillBuffer();
-  printBuffer();
-  stat = myDMA.startJob();
-}
-
-void loop()
-{
-  Serial.println("do other things here while your DMA runs in the background.");
-//  Serial.print("~ sine: ");
-//  Serial.print(sine.getLast());
-//  Serial.print(" phase: ");
-//  Serial.println(sine.getPhase());
-  Serial.print(" DMA callback count: ");
-  Serial.println(callbackCount);
-  
-  delay(2000);
+  Serial.println();  
 }
