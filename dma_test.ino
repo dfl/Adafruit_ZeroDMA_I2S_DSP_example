@@ -84,8 +84,8 @@ void setup()
   i2s.begin(I2S_32_BIT, SRATE);
   i2s.enableTx();
 
-  SineTable::print();
-  delay(2000);
+//  SineTable::print();
+//  delay(2000);
 
   sine.setFrequency( 110.0 );
   fillBuffer();
@@ -94,7 +94,7 @@ void setup()
 
 void loop()
 {
-//  Serial.println("do other things here while your DMA runs in the background.");
+
 //  Serial.print("uint32 sine: ");
 //  Serial.print(sine.process());
 //  Serial.print("     int32 sine: ");
@@ -102,8 +102,9 @@ void loop()
 //  Serial.print("     phase: ");
 //  Serial.println(sine.getPhase(), HEX);
 
-  Serial.print(" DMA callback count: ");
-  Serial.println(callbackCount);
-
+//  Serial.println("do other things here while your DMA runs in the background.");
+//  Serial.print(" DMA callback count: ");
+//  Serial.println(callbackCount);
+//
 //  delay(100);
 }

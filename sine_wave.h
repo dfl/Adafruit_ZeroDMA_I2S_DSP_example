@@ -4,8 +4,10 @@
 // https://spin.atomicobject.com/2012/03/15/simple-fixed-point-math/
 // fixed point phasor;    TODO make template class?
 
-#define _uFixMul32(a,b) ((uint64_t(a)*uint64_t(b)) >> 16)
-#define _iFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
+#define _uFixMul32(a,b) ( (uint64_t(a)*uint64_t(b) + (1<<32) ) >> 32)
+#define _8to32bit(x) (x << 24)
+
+//#define _iFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
 
 class Phasor {
 public:
@@ -73,12 +75,10 @@ namespace SineTable {
     uint32_t output, diff, offset;
     if (b>=a) {      
       diff = b-a;
-//      offset = (frac*diff) >> 16;
       offset = _uFixMul32(frac,diff);
       output = a + offset;
     } else {
       diff = a-b;
-//      offset = (frac*diff) >> 16;
       offset = _uFixMul32(frac,diff);
       output = a - offset;
     }
@@ -126,10 +126,12 @@ class SineOsc : public Phasor {
 protected:
 
   uint32_t lastOut;
+  uint8_t gain;
 
 public:
   SineOsc( int srate ) : Phasor(float(srate)) {
     SineTable::init();
+    setGain(0xFF);
   }
 
   uint32_t process() {
@@ -137,14 +139,25 @@ public:
     return lastOut = SineTable::lookup(phase);
   }
 
+  void setGain(float g) {
+    gain = floor( float(UCHAR_MAX) * g );
+  }
   uint32_t getLast() { return lastOut; }
 
   inline int32_t makeSigned(uint32_t x) {
     const uint32_t OFFSET = (1<<31);
-    return int32_t(x) + OFFSET;
+//    return int32_t(x) + OFFSET;
+    const uint32_t MAX_LONG = OFFSET - 1;
+    return int32_t(x) - MAX_LONG;
   }
 
-  int32_t getSigned() { return makeSigned( lastOut ); }
+  int32_t getSigned() {
+//    uint32_t gain32 = 0xFFFFFFFFL; //_8to32bit(gain);
+//    uint32_t scaled = lastOut; //_uFixMul32( lastOut, gain32 );
+//    return makeSigned( scaled );
+    return makeSigned( lastOut );
+
+  }
 
 };
 
