@@ -20,7 +20,8 @@ void inline fillBuffer() {
   int *ptr = (int*)data;
   int osc;
   for(int i=0; i<BUFSIZE/2; i++){
-    osc = sine.process() >> 4;    
+    sine.process();
+    osc = sine.getSigned() >> 4;
     *ptr++ = osc;
     *ptr++ = osc;
   }
@@ -83,21 +84,26 @@ void setup()
   i2s.begin(I2S_32_BIT, SRATE);
   i2s.enableTx();
 
+  SineTable::print();
+  delay(2000);
+
   sine.setFrequency( 110.0 );
   fillBuffer();
-  printBuffer();
   stat = myDMA.startJob();
 }
 
 void loop()
 {
-  Serial.println("do other things here while your DMA runs in the background.");
-//  Serial.print("~ sine: ");
-//  Serial.print(sine.getLast());
-//  Serial.print(" phase: ");
-//  Serial.println(sine.getPhase());
+//  Serial.println("do other things here while your DMA runs in the background.");
+//  Serial.print("uint32 sine: ");
+//  Serial.print(sine.process());
+//  Serial.print("     int32 sine: ");
+//  Serial.print(sine.getSigned());
+//  Serial.print("     phase: ");
+//  Serial.println(sine.getPhase(), HEX);
+
   Serial.print(" DMA callback count: ");
   Serial.println(callbackCount);
-  
-  delay(2000);
+
+//  delay(100);
 }

@@ -1,18 +1,24 @@
-#ifndef wavetables_h
-#define wavetables_h
+#ifndef SineOsc_h
+#define SineOsc_h
 
 // https://spin.atomicobject.com/2012/03/15/simple-fixed-point-math/
 // fixed point phasor;    TODO make template class?
 
+#define _uFixMul32(a,b) ((uint64_t(a)*uint64_t(b)) >> 16)
+#define _iFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
+
 class Phasor {
 public:
-  static const size_t PRECISION_BITS = 32; //sizeof(uint32_t)*8;
+  static const uint32_t  PRECISION_BITS = 32; //sizeof(uint32_t)*8;
+  static const uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
+  static const uint32_t     _90_DEGREES = 1 << (PRECISION_BITS-2);
+  static const uint32_t  MAX_PHASE      = 4294967295L; //(1L << PRECISION_BITS) - 1; // ULONG_MAX
+  static constexpr float MAX_PHASE_F    = float(MAX_PHASE);
+
 protected:
   float freq, srate;
   uint32_t phase = 0, normFreq;
-  static const uint32_t  MAX_PHASE      = ULONG_MAX; //(1 << PRECISION_BITS) - 1;
-  static constexpr float MAX_PHASE_F    = float(MAX_PHASE);
-  static const uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
+
   bool isWrap, isEven;
   uint8_t cycles;
 
@@ -51,43 +57,69 @@ public:
 namespace SineTable {
   static const uint8_t TABLE_BITS = 12;
   static const uint16_t TABLE_SIZE = 1U << TABLE_BITS;
-  int32_t LUT[TABLE_SIZE+1] = {0};
 
   static const uint8_t INDEX_SHIFT =  (Phasor::PRECISION_BITS - TABLE_BITS);
   static const uint8_t FRAC_SHIFT  =  (Phasor::PRECISION_BITS - 2*TABLE_BITS);
-  static const uint16_t BYTE_MASK = TABLE_SIZE - 1;
-  
-  inline int32_t linterp( uint64_t phase ) {
+  static const uint16_t BYTE_MASK = TABLE_SIZE-1;
+
+  uint32_t LUT[TABLE_SIZE+1] = {0};
+
+  inline uint32_t lookup( uint32_t phase ) {
     uint32_t index = (phase >> INDEX_SHIFT) & BYTE_MASK;
     uint64_t frac  = (phase >> FRAC_SHIFT ) & BYTE_MASK;
-    int32_t a = LUT[index];
-    int32_t b = LUT[index+1];
-    //// output = a + (b-a)*frac
-
-    int64_t diff = b-a;
-    int32_t offset = (frac*diff) / (1 << 16);
-//    aSerial.p("  index: ").p(index).p("   frac: ").p(uint32_t(frac)).p("  a: ").p(a, HEX).p("   b: ").p(b, HEX).p(" diff: ").p(uint32_t(diff),HEX).p(" offset: ").pln(offset,HEX);
-    return a + offset;
+    uint32_t a = LUT[index];
+    uint32_t b = LUT[index+1];
+    //// linear interpolation: output = a + (b-a)*frac
+    uint32_t output, diff, offset;
+    if (b>=a) {      
+      diff = b-a;
+//      offset = (frac*diff) >> 16;
+      offset = _uFixMul32(frac,diff);
+      output = a + offset;
+    } else {
+      diff = a-b;
+//      offset = (frac*diff) >> 16;
+      offset = _uFixMul32(frac,diff);
+      output = a - offset;
+    }
+    return output;
   }
-
+  
   void init() {
-    if (LUT[1] == 0 ) {
+    bool isEmpty = LUT[10] == 0;
+    if (isEmpty) {
       int i=0;
-      for (i=0; i<TABLE_SIZE; ++i) {
-        LUT[i] = int32_t(float(LONG_MAX)*sin(TWO_PI*(1.0/TABLE_SIZE)*i));
+      for (i=0; i<TABLE_SIZE; i++) { // TODO: round() or floor() ?
+        LUT[i] = uint32_t( float(ULONG_MAX) * 0.5 * (1.f-cos(TWO_PI*(1.0/TABLE_SIZE)*i)) ); // unsigned Hann
       }
-      LUT[i+1] = LUT[0]; // duplicate to prevent need for wrapping on linear interpolation
+      LUT[TABLE_SIZE] = LUT[0]; // duplicate to prevent need for wrapping on linear interpolation
     }
   }
 
-//  void print() {
-//    aSerial.p("Sine Table[").p(TABLE_SIZE).p("] = ");
-//    for(int i=0; i < TABLE_SIZE; i++ ) {
-//      aSerial.p( LUT[i] ).p(", ");      
-//    }
-//    aSerial.pln();
-//  }
+  inline int32_t makeSigned(uint32_t x) {
+    const uint32_t OFFSET = (1<<31);
+    return int32_t(x) + OFFSET;
+  }
 
+  void print() {
+    Serial.print("unsigned sine[");
+    Serial.print(TABLE_SIZE);
+    Serial.print("] = ");
+    for(int i=0; i < TABLE_SIZE; i++ ) {
+      Serial.print( LUT[i] );
+      Serial.print(", ");
+    }
+    Serial.println( LUT[TABLE_SIZE] );
+    
+    Serial.print("signed sine[");
+    Serial.print(TABLE_SIZE);
+    Serial.print("] = ");
+    for(int i=0; i < TABLE_SIZE; i++ ) {
+      Serial.print( makeSigned(LUT[i]) );
+      Serial.print(", ");
+    }
+    Serial.println( LUT[TABLE_SIZE] );
+  }
 }
 
 class SineOsc : public Phasor {
@@ -95,17 +127,24 @@ protected:
 
   uint32_t lastOut;
 
-public:  
+public:
   SineOsc( int srate ) : Phasor(float(srate)) {
     SineTable::init();
   }
 
-  int32_t process() {
+  uint32_t process() {
     incPhase();
-    return lastOut = SineTable::linterp(phase);
+    return lastOut = SineTable::lookup(phase);
   }
 
-  int32_t getLast() { return lastOut; }
+  uint32_t getLast() { return lastOut; }
+
+  inline int32_t makeSigned(uint32_t x) {
+    const uint32_t OFFSET = (1<<31);
+    return int32_t(x) + OFFSET;
+  }
+
+  int32_t getSigned() { return makeSigned( lastOut ); }
 
 };
 
