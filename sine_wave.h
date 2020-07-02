@@ -4,8 +4,7 @@
 // https://spin.atomicobject.com/2012/03/15/simple-fixed-point-math/
 // fixed point phasor;    TODO make template class?
 
-#define _uFixMul32(a,b) ((uint64_t(a)*uint64_t(b)) >> 16)
-#define _iFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
+#define _uFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
 
 class Phasor {
 public:
@@ -73,12 +72,10 @@ namespace SineTable {
     uint32_t output, diff, offset;
     if (b>=a) {      
       diff = b-a;
-//      offset = (frac*diff) >> 16;
       offset = _uFixMul32(frac,diff);
       output = a + offset;
     } else {
       diff = a-b;
-//      offset = (frac*diff) >> 16;
       offset = _uFixMul32(frac,diff);
       output = a - offset;
     }
@@ -126,10 +123,12 @@ class SineOsc : public Phasor {
 protected:
 
   uint32_t lastOut;
+  uint8_t gain;
 
 public:
   SineOsc( int srate ) : Phasor(float(srate)) {
     SineTable::init();
+    setGain(1.0);
   }
 
   uint32_t process() {
@@ -137,15 +136,49 @@ public:
     return lastOut = SineTable::lookup(phase);
   }
 
+  void setGain(float g) {
+    gain = floor( float(UCHAR_MAX) * g );
+  }
   uint32_t getLast() { return lastOut; }
 
   inline int32_t makeSigned(uint32_t x) {
     const uint32_t OFFSET = (1<<31);
-    return int32_t(x) + OFFSET;
+//    return int32_t(x) + OFFSET;
+    const uint32_t MAX_LONG = OFFSET - 1;
+    return int32_t(x) - MAX_LONG;
   }
 
-  int32_t getSigned() { return makeSigned( lastOut ); }
+#define _uGainMul32(a,b) uint32_t( (uint64_t(a)*(uint64_t(b)+1) + (1L << 32) ) >> 32)
+
+  int32_t getSigned() {
+    uint32_t scaled;
+    uint64_t gain32 = gain * uint64_t(0x1010101);
+    scaled = _uGainMul32( lastOut, gain32 );
+
+    Serial.print("preGain: ");
+    Serial.print(lastOut, HEX);
+    Serial.print("  gain: ");
+//    Serial.print(gain32, HEX);
+    print64(gain32, HEX);
+    Serial.print("  result: ");
+    uint64_t result = uint64_t(lastOut)*uint64_t(gain32) + (1L << 31); 
+    print64(result, HEX);
+    Serial.print("  postGain: ");
+    Serial.println(scaled, HEX);    
+    return makeSigned( scaled );
+  }
+
+  void print64( uint64_t val, int k = DEC) {
+    uint32_t val_hi = val >> 32;
+    uint32_t val_lo = val & 0xFFFFFFFF;    
+    Serial.print(val_hi, k);
+    Serial.print(val_lo, k);
+    if(k == HEX && val_lo == 0) {
+      Serial.print("00000000");
+    }
+  }  
 
 };
+
 
 #endif
