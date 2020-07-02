@@ -4,7 +4,8 @@
 // https://spin.atomicobject.com/2012/03/15/simple-fixed-point-math/
 // fixed point phasor;    TODO make template class?
 
-#define _uFixMul32(a,b) ( (uint64_t(a)*uint64_t(b) + (1<<32) ) >> 32)
+#define _uFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
+#define _uGainMul32(a,b) uint32_t( (uint64_t(a)*(uint64_t(b)+1) + (1<<31) ) >> 32)
 #define _8to32bit(x) (x << 24)
 
 //#define _iFixMul32(a,b) (int64_t(a)*int64_t(b)) / (1 << 16)
@@ -131,7 +132,7 @@ protected:
 public:
   SineOsc( int srate ) : Phasor(float(srate)) {
     SineTable::init();
-    setGain(0xFF);
+    setGain(1.0);
   }
 
   uint32_t process() {
@@ -151,14 +152,37 @@ public:
     return int32_t(x) - MAX_LONG;
   }
 
-  int32_t getSigned() {
-//    uint32_t gain32 = 0xFFFFFFFFL; //_8to32bit(gain);
-//    uint32_t scaled = lastOut; //_uFixMul32( lastOut, gain32 );
-//    return makeSigned( scaled );
-    return makeSigned( lastOut );
+#define _uGainMul32(a,b) uint32_t( (uint64_t(a)*uint64_t(b) + (1L << 32) ) >> 32)
 
+  int32_t getSigned() {
+    uint32_t scaled;
+    uint32_t gain32 = gain * 0x01010101;
+    scaled = _uGainMul32( lastOut, gain32 );
+
+    Serial.print("preGain: ");
+    Serial.print(lastOut, HEX);
+    Serial.print("  gain: ");
+    Serial.print(gain32, HEX);
+//    print64(gain32, HEX);
+    Serial.print("  result: ");
+    uint64_t result = uint64_t(lastOut)*uint64_t(gain32) + (1L << 31); 
+    print64(result, HEX);
+    Serial.print("  postGain: ");
+    Serial.println(scaled, HEX);    
+    return makeSigned( scaled );
   }
 
+  void print64( uint64_t val, int k = DEC) {
+    uint32_t val_hi = val >> 32;
+    uint32_t val_lo = val & 0xFFFFFFFF;    
+    Serial.print(val_hi, k);
+    Serial.print(val_lo, k);
+    if(k == HEX && val_lo == 0) {
+      Serial.print("00000000");
+    }
+  }  
+
 };
+
 
 #endif

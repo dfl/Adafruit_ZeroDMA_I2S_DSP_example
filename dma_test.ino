@@ -48,8 +48,7 @@ void dma_callback(Adafruit_ZeroDMA *dma) {
   myDMA.startJob();  
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(9600);
   while(!Serial);                 // Wait for Serial monitor before continuing
 
@@ -88,13 +87,14 @@ void setup()
 //  delay(2000);
 
   sine.setFrequency( 110.0 );
-  fillBuffer();
-  stat = myDMA.startJob();
+//  fillBuffer();
+//  stat = myDMA.startJob();
 }
 
-void loop()
-{
+void loop() {
 
+  sine.process();
+  sine.getSigned();
 //  Serial.print("uint32 sine: ");
 //  Serial.print(sine.process());
 //  Serial.print("     int32 sine: ");
@@ -106,5 +106,5 @@ void loop()
 //  Serial.print(" DMA callback count: ");
 //  Serial.println(callbackCount);
 //
-//  delay(100);
+  delay(100);
 }
