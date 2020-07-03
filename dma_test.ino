@@ -1,6 +1,7 @@
 #include <Adafruit_ZeroI2S.h>
 #include <Adafruit_ZeroDMA.h>
 #include "utility/dma.h"
+#include <advancedSerial.h>
 
 /* create a buffer for both the left and right channel data */
 #define BUFSIZE 20
@@ -20,8 +21,7 @@ void inline fillBuffer() {
   int *ptr = (int*)data;
   int osc;
   for(int i=0; i<BUFSIZE/2; i++){
-    sine.process();
-    osc = sine.getSigned() >> 4;
+    osc = sine.process() >> 2;
     *ptr++ = osc;
     *ptr++ = osc;
   }
@@ -52,6 +52,29 @@ void setup() {
   Serial.begin(9600);
   while(!Serial);                 // Wait for Serial monitor before continuing
 
+  setup_DMA();
+  i2s.begin(I2S_32_BIT, SRATE);
+  i2s.enableTx();
+
+//  SineTable::print();
+//  delay(2000);
+
+  sine.setFrequency( 110.0 );
+  sine.setGain(1.0);
+  fillBuffer();
+  stat = myDMA.startJob();
+}
+
+void loop() {
+//  sine.process();
+//  Serial.println("do other things here while your DMA runs in the background.");
+//  Serial.print("   DMA callback count: ");
+//  Serial.println(callbackCount);
+  delay(100);
+}
+
+
+void setup_DMA() {
   Serial.println("I2S output via DMA");
 
   Serial.println("Configuring DMA trigger");
@@ -79,32 +102,5 @@ void setup() {
 
   Serial.println("Adding callback");
   myDMA.setCallback(dma_callback);
-
-  i2s.begin(I2S_32_BIT, SRATE);
-  i2s.enableTx();
-
-//  SineTable::print();
-//  delay(2000);
-
-  sine.setFrequency( 110.0 );
-//  fillBuffer();
-//  stat = myDMA.startJob();
-}
-
-void loop() {
-
-  sine.process();
-  sine.getSigned();
-//  Serial.print("uint32 sine: ");
-//  Serial.print(sine.process());
-//  Serial.print("     int32 sine: ");
-//  Serial.print(sine.getSigned());
-//  Serial.print("     phase: ");
-//  Serial.println(sine.getPhase(), HEX);
-
-//  Serial.println("do other things here while your DMA runs in the background.");
-//  Serial.print(" DMA callback count: ");
-//  Serial.println(callbackCount);
-//
-  delay(100);
+  Serial.println();  
 }
