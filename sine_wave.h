@@ -25,17 +25,23 @@ void print64( int64_t val, int k = DEC) {
 }
 
 int32_t fixedGain( int64_t a, uint64_t b, char bits = 16 ) {
+  if(DEBUG) {
     Serial.print("~ fixedGain: ");
     Serial.print(int32_t(a), HEX);
     Serial.print(" * ");
     Serial.print(int32_t(b), HEX);
-    int64_t result = ( int64_t(a)*uint64_t(b) + (1U << (bits-1)) );
+  }
+  int64_t result = ( int64_t(a)*uint64_t(b) + (1U << (bits-1)) );
+  if(DEBUG) {
     Serial.print(" multiplied: ");
     print64( result, HEX );
-    result >>= bits;
+  }
+  result >>= bits;
+  if(DEBUG) {
     Serial.print(" shifted: ");
     Serial.println(int32_t(result), HEX);
-    return result;
+  }
+  return result;
 }
 
 class Phasor {
@@ -43,7 +49,7 @@ public:
   static constexpr uint32_t  PRECISION_BITS = sizeof(uint32_t)*8; // 32
   static constexpr uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
   static constexpr uint32_t     _90_DEGREES = 1 << (PRECISION_BITS-2);
-  static constexpr uint32_t  MAX_PHASE      = (1LL << PRECISION_BITS) - 1; // ULONG_MAX
+  static constexpr uint32_t  MAX_PHASE      = 0xFFFFFFFF; //(1LL << PRECISION_BITS) - 1; // ULONG_MAX
 
 protected:
   float freq, srate;
@@ -96,25 +102,31 @@ namespace SineTable {
   inline int32_t lookup( uint32_t phase ) {
     uint32_t index = (phase >> FRACTIONAL_BITS) & INDEX_MASK;
     uint32_t frac = phase & FRAC_MASK;
-//    Serial.print("phase: ");
-//    Serial.print(phase, HEX);
-//    Serial.print(" idx: ");
-//    Serial.print(index, HEX);
-//    Serial.print(" frac: ");
-//    Serial.println(frac, HEX);
+    if(DEBUG) {
+      Serial.print("phase: ");
+      Serial.print(phase, HEX);
+      Serial.print(" idx: ");
+      Serial.print(index, HEX);
+      Serial.print(" frac: ");
+      Serial.println(frac, HEX);
+    }
 
 //// linear interpolation: output = a + (b-a)*frac
     int32_t a = LUT[index];
     int32_t b = LUT[index+1];
     return a + _fixedGain( b-a, frac, FRACTIONAL_BITS );
+//    return a + int32_t(( int64_t(b-a) * uint64_t(frac) + (1U << (FRACTIONAL_BITS-1)) ) >> FRACTIONAL_BITS);
   }
 
+  uint16_t hann( uint32_t phase ) { // raised cosine pulse
+    return uint16_t(lookup(phase - Phasor::_90_DEGREES) >> 2) + (1<<16)-1; // INT_MIN
+  }
+  
   void init() {
     bool isEmpty = LUT[10] == 0;
     if (isEmpty) {
       int i=0;
       for (i=0; i<TABLE_SIZE; i++) { // TODO: round() or floor() ?
-//        LUT[i] = int32_t(float(LONG_MAX)* 0.5 * (1.f-cos(TWO_PI*(1.0/TABLE_SIZE)*i)) );
         LUT[i] = int32_t(float(LONG_MAX)*sin(TWO_PI*(1.0/TABLE_SIZE)*i));
       }
       LUT[TABLE_SIZE] = LUT[0]; // duplicate to prevent need for wrapping on linear interpolation
