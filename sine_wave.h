@@ -3,6 +3,44 @@
 
 #define _fixedGain(a,b,bits)   int32_t(( int64_t(a) * uint64_t(b) + (1U << (bits-1)) ) >> bits)
 
+void print64( uint64_t val, int k = DEC) {
+  uint32_t val_hi = val >> 32;
+  uint32_t val_lo = val & 0xFFFFFFFF;    
+  Serial.print(val_hi, k);
+  Serial.print(val_lo, k);
+  if(k == HEX && val_lo == 0) {
+    Serial.print("00000000");
+  }
+}
+
+void print64( int64_t val, int k = DEC) {
+  int32_t val_hi = val >> 32;
+  int32_t val_lo = val & 0xFFFFFFFF;
+  Serial.print(val_hi, k);
+  Serial.print(val_lo, k);
+}
+
+int32_t fixedGain( int32_t a, uint32_t b, size_t bits = 32 ) {
+  if(DEBUG) {
+    Serial.print(" ~ fixedGain: ");
+    Serial.print(int32_t(a), HEX);
+    Serial.print(" * ");
+    Serial.print(uint32_t(b), HEX);
+  }
+  uint64_t result = int64_t(a)*uint64_t(b);
+  result += (1LL << (bits-1)); // rounding bit
+  if(DEBUG) {
+    Serial.print(" multiplied: ");
+    print64( result, HEX );
+  }
+  result >>= bits;
+  if(DEBUG) {
+    Serial.print(" shifted: ");
+    Serial.println(int32_t(result), HEX);
+  }
+  return int32_t(result);
+}
+
 class Phasor {
 protected:
   float freq, srate;
@@ -13,9 +51,9 @@ protected:
 
 public:   
   static constexpr uint32_t  PRECISION_BITS = sizeof(uint32_t)*8; // 32
-  static constexpr uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
-  static constexpr uint32_t     _90_DEGREES = 1 << (PRECISION_BITS-2);
-  static constexpr uint32_t  MAX_PHASE      = 0xFFFFFFFF; //(1LL << PRECISION_BITS) - 1; // ULONG_MAX
+  static constexpr uint32_t  MAX_PHASE      = (1LL << PRECISION_BITS) - 1; // ULONG_MAX
+  static constexpr uint32_t    _180_DEGREES = MAX_PHASE >> 1;
+  static constexpr uint32_t     _90_DEGREES = MAX_PHASE >> 2;
 
   Phasor( float srate ) {
     this->srate = srate;
@@ -121,16 +159,16 @@ public:
   int32_t process() {
     incPhase();
     lastOut = SineTable::lookup(phase);
-    if(DEBUG) {
-      Serial.print("preGain: ");
-      Serial.print(lastOut);
-    }
-    lastOut = _fixedGain(lastOut, gain * 0x01010101L, 32 );
+//    if(DEBUG) {
+//      Serial.print("preGain: ");
+//      Serial.print(lastOut);
+//    }
+    lastOut = _fixedGain(lastOut, uint32_t(gain) * 0x01010101L, 32 );
 
-    if(DEBUG) {
-      Serial.print(" postGain: ");
-      Serial.println(lastOut);
-    }
+//    if(DEBUG) {
+//      Serial.print(" postGain: ");
+//      Serial.println(lastOut);
+//    }
     return lastOut;
   }
 
@@ -153,7 +191,7 @@ private:
   Phasor mod;
 
   uint32_t hann( uint32_t phase ) { // raised cosine pulse
-    return uint32_t( int64_t(SineTable::lookup(phase - Phasor::_90_DEGREES)) + (1L<<32)-1 );
+    return uint32_t( int64_t(SineTable::lookup(phase - Phasor::_90_DEGREES)) + (1L<<31)-1 );
   }
 
 public:
@@ -168,48 +206,18 @@ public:
   }
 
   int32_t process() {
-    return _fixedGain( SineOsc::process(), hann( mod.process() ), 32 );
+    uint32_t window = hann( mod.process() );
+    if(DEBUG) {
+      Serial.print(" phase: ");
+      Serial.print(mod.getPhase(), HEX);
+      Serial.print(" hann: ");
+      Serial.println(window, HEX);
+    }
+
+    return _fixedGain( SineOsc::process(), window, 32 );
   }
 
 };
 
-
-//void print64( uint64_t val, int k = DEC) {
-//  uint32_t val_hi = val >> 32;
-//  uint32_t val_lo = val & 0xFFFFFFFF;    
-//  Serial.print(val_hi, k);
-//  Serial.print(val_lo, k);
-//  if(k == HEX && val_lo == 0) {
-//    Serial.print("00000000");
-//  }
-//}
-//
-//void print64( int64_t val, int k = DEC) {
-//  int32_t val_hi = val >> 32;
-//  int32_t val_lo = val & 0xFFFFFFFF;
-//  Serial.print(val_hi, k);
-//  Serial.print(val_lo, k);
-//}
-
-//inline int32_t fixedGain( int32_t a, uint32_t b, size_t bits = 32 ) {
-//  if(DEBUG) {
-//    Serial.print(" ~ fixedGain: ");
-//    Serial.print(int32_t(a), HEX);
-//    Serial.print(" * ");
-//    Serial.print(int32_t(b), HEX);
-//  }
-//  uint64_t result = int64_t(a)*uint64_t(b);
-//  result += (1LL << (bits-1)); // rounding bit
-//  if(DEBUG) {
-//    Serial.print(" multiplied: ");
-//    print64( result, HEX );
-//  }
-//  result >>= bits;
-//  if(DEBUG) {
-//    Serial.print(" shifted: ");
-//    Serial.println(int32_t(result), HEX);
-//  }
-//  return int32_t(result);
-//}
 
 #endif

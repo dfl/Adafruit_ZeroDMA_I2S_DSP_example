@@ -3,7 +3,7 @@
 #include "utility/dma.h"
 #include <advancedSerial.h>
 
-#define DEBUG 0 // print audio vs play audio
+#define DEBUG 1 // print audio vs play audio
 
 /* create a buffer for both the left and right channel data */
 #define BUFSIZE 10
@@ -63,8 +63,8 @@ void setup() {
 //  delay(2000);
 
   sine.setFrequency( 220.0 );
-//  sine.getMod( 1.0 );
-//  sine.setGain(0.73);
+//  sine.setMod( 1.0 );
+  sine.setGain(1.0);
   if(!DEBUG) {
     fillBuffer();
     stat = myDMA.startJob();
@@ -79,7 +79,7 @@ void loop() {
     Serial.print("   DMA callback count: ");
     Serial.println(callbackCount);
   }
-  delay(100);
+//  delay(10);
 }
 
 
