@@ -3,6 +3,8 @@
 #include "utility/dma.h"
 #include <advancedSerial.h>
 
+#define DEBUG 0 // print audio vs play audio
+
 /* create a buffer for both the left and right channel data */
 #define BUFSIZE 20
 int data[BUFSIZE];
@@ -21,7 +23,7 @@ void inline fillBuffer() {
   int *ptr = (int*)data;
   int osc;
   for(int i=0; i<BUFSIZE/2; i++){
-    osc = sine.process() >> 2;
+    osc = sine.process() >> 3;
     *ptr++ = osc;
     *ptr++ = osc;
   }
@@ -56,20 +58,26 @@ void setup() {
   i2s.begin(I2S_32_BIT, SRATE);
   i2s.enableTx();
 
+
 //  SineTable::print();
 //  delay(2000);
 
   sine.setFrequency( 110.0 );
   sine.setGain(1.0);
-  fillBuffer();
-  stat = myDMA.startJob();
+  if(!DEBUG) {
+    fillBuffer();
+    stat = myDMA.startJob();
+  }
 }
 
 void loop() {
-//  sine.process();
-//  Serial.println("do other things here while your DMA runs in the background.");
-//  Serial.print("   DMA callback count: ");
-//  Serial.println(callbackCount);
+  if(DEBUG) {
+    sine.process();
+  } else {
+    Serial.println("do other things here while your DMA runs in the background.");
+    Serial.print("   DMA callback count: ");
+    Serial.println(callbackCount);
+  }
   delay(100);
 }
 
