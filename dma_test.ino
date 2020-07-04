@@ -6,7 +6,7 @@
 #define DEBUG 0 // print audio vs play audio
 
 /* create a buffer for both the left and right channel data */
-#define BUFSIZE 20
+#define BUFSIZE 10
 int data[BUFSIZE];
 
 Adafruit_ZeroDMA myDMA;
@@ -16,7 +16,7 @@ Adafruit_ZeroI2S i2s; // using default pins
 
 #include "sine_wave.h"
 #define SRATE 22050
-SineOsc sine(SRATE);
+ModOsc sine(SRATE);
 
 /*the I2S module will be expecting data interleaved LRLR*/
 void inline fillBuffer() {  
@@ -62,8 +62,9 @@ void setup() {
 //  SineTable::print();
 //  delay(2000);
 
-  sine.setFrequency( 110.0 );
-  sine.setGain(1.0);
+  sine.setFrequency( 220.0 );
+//  sine.getMod( 1.0 );
+//  sine.setGain(0.73);
   if(!DEBUG) {
     fillBuffer();
     stat = myDMA.startJob();

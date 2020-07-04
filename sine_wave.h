@@ -3,54 +3,7 @@
 
 #define _fixedGain(a,b,bits)   int32_t(( int64_t(a) * uint64_t(b) + (1U << (bits-1)) ) >> bits)
 
-void print64( uint64_t val, int k = DEC) {
-  uint32_t val_hi = val >> 32;
-  uint32_t val_lo = val & 0xFFFFFFFF;    
-  Serial.print(val_hi, k);
-  Serial.print(val_lo, k);
-  if(k == HEX && val_lo == 0) {
-    Serial.print("00000000");
-  }
-}
-
-void print64( int64_t val, int k = DEC) {
-  uint32_t val_hi = val >> 32;
-  uint32_t val_lo = val & 0xFFFFFFFF;
-  if(k == HEX) {
-    if (val_hi != 0xFFFFFFFF) {
-      Serial.print(val_hi, k);
-    }
-  }
-  Serial.print(val_lo, k);
-}
-
-int32_t fixedGain( int64_t a, uint64_t b, char bits = 16 ) {
-  if(DEBUG) {
-    Serial.print("~ fixedGain: ");
-    Serial.print(int32_t(a), HEX);
-    Serial.print(" * ");
-    Serial.print(int32_t(b), HEX);
-  }
-  int64_t result = ( int64_t(a)*uint64_t(b) + (1U << (bits-1)) );
-  if(DEBUG) {
-    Serial.print(" multiplied: ");
-    print64( result, HEX );
-  }
-  result >>= bits;
-  if(DEBUG) {
-    Serial.print(" shifted: ");
-    Serial.println(int32_t(result), HEX);
-  }
-  return result;
-}
-
 class Phasor {
-public:
-  static constexpr uint32_t  PRECISION_BITS = sizeof(uint32_t)*8; // 32
-  static constexpr uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
-  static constexpr uint32_t     _90_DEGREES = 1 << (PRECISION_BITS-2);
-  static constexpr uint32_t  MAX_PHASE      = 0xFFFFFFFF; //(1LL << PRECISION_BITS) - 1; // ULONG_MAX
-
 protected:
   float freq, srate;
   uint32_t phase = 0, normFreq;
@@ -59,6 +12,11 @@ protected:
   uint8_t cycles;
 
 public:   
+  static constexpr uint32_t  PRECISION_BITS = sizeof(uint32_t)*8; // 32
+  static constexpr uint32_t    _180_DEGREES = 1 << (PRECISION_BITS-1);
+  static constexpr uint32_t     _90_DEGREES = 1 << (PRECISION_BITS-2);
+  static constexpr uint32_t  MAX_PHASE      = 0xFFFFFFFF; //(1LL << PRECISION_BITS) - 1; // ULONG_MAX
+
   Phasor( float srate ) {
     this->srate = srate;
     resetPhase();
@@ -79,6 +37,11 @@ public:
    
   uint32_t getPhase() {
     return phase;
+  }
+
+  uint32_t process() {
+    incPhase();
+    return phase;    
   }
   
   void resetPhase( float p = 0.f ) {
@@ -102,24 +65,20 @@ namespace SineTable {
   inline int32_t lookup( uint32_t phase ) {
     uint32_t index = (phase >> FRACTIONAL_BITS) & INDEX_MASK;
     uint32_t frac = phase & FRAC_MASK;
-    if(DEBUG) {
+#ifdef DEBUG_LINTERP
       Serial.print("phase: ");
       Serial.print(phase, HEX);
       Serial.print(" idx: ");
       Serial.print(index, HEX);
       Serial.print(" frac: ");
       Serial.println(frac, HEX);
-    }
+#endif
 
 //// linear interpolation: output = a + (b-a)*frac
     int32_t a = LUT[index];
     int32_t b = LUT[index+1];
-    return a + _fixedGain( b-a, frac, FRACTIONAL_BITS );
-//    return a + int32_t(( int64_t(b-a) * uint64_t(frac) + (1U << (FRACTIONAL_BITS-1)) ) >> FRACTIONAL_BITS);
-  }
-
-  uint16_t hann( uint32_t phase ) { // raised cosine pulse
-    return uint16_t(lookup(phase - Phasor::_90_DEGREES) >> 2) + (1<<16)-1; // INT_MIN
+//    return a + _fixedGain( b-a, frac, FRACTIONAL_BITS );
+    return a + int32_t(( int64_t(b-a) * uint64_t(frac) + (1U << (FRACTIONAL_BITS-1)) ) >> FRACTIONAL_BITS);
   }
   
   void init() {
@@ -143,15 +102,16 @@ namespace SineTable {
     }
     Serial.println( LUT[TABLE_SIZE] );
   }
+
 }
 
 class SineOsc : public Phasor {
 protected:
-
   int32_t lastOut;
   uint8_t gain;
   static const uint8_t GAIN_BITS = sizeof(gain)*8;
   static const uint32_t MAX_GAIN = (1U << GAIN_BITS)-1;
+
 public:
   SineOsc( int srate ) : Phasor(float(srate)) {
     SineTable::init();
@@ -161,15 +121,16 @@ public:
   int32_t process() {
     incPhase();
     lastOut = SineTable::lookup(phase);
-//    Serial.print("preGain: ");
-//    Serial.print(lastOut, HEX);
-//    Serial.print(" * ");
-//    Serial.print(gain, HEX);
+    if(DEBUG) {
+      Serial.print("preGain: ");
+      Serial.print(lastOut);
+    }
+    lastOut = _fixedGain(lastOut, gain * 0x01010101L, 32 );
 
-//    lastOut = fixedGain(lastOut, gain, GAIN_BITS );
-
-//    Serial.print(" postGain: ");
-//    Serial.println(lastOut, HEX);
+    if(DEBUG) {
+      Serial.print(" postGain: ");
+      Serial.println(lastOut);
+    }
     return lastOut;
   }
 
@@ -184,63 +145,71 @@ public:
   }
 
   uint32_t getLast() { return lastOut; }
-
-  inline int32_t makeSigned(uint32_t x) {
-    return int32_t(x) + LONG_MIN;
-  }
   
-//#define _uGainMul32(a,b) uint32_t( (uint64_t(a) * (uint64_t(b)+1) + (1L << 31) ) >> 32)
-//#define _iGainMul32(a,b)  int32_t(  (int64_t(a) * (uint64_t(b)+1) + (1L << 31) ) / (1<<32))
-//
-//  int32_t getSigned() {
-//    int32_t _signed, scaled;
-//    uint64_t gain32 = 0xFFFFFFFF; //gain * uint64_t(0x1010101);
-//    _signed = makeSigned(lastOut);
-//    uint32_t signMask = _signed & (1 << 31);
-//    scaled = _uGainMul32( _signed, gain32 );
-////    scaled = _iGainMul32( _signed, gain32 );
-//    scaled ^= signMask;
-//    return scaled;
-//    
-//
-////    scaled = makeSigned( _uGainMul32( lastOut, gain32 ) );
-////    scaled |= signMask;
-////    return scaled;
-//
-////    int64_t igain32 = gain32 >> 2;
-////    return makeSigned( lastOut );
-//
-////    Serial.println();
-////    Serial.print("signed pre:  ");
-////    Serial.println(makeSigned(lastOut));
-////
-////    Serial.print("  preGain: ");
-////    Serial.print(lastOut, HEX);
-////    Serial.print("  gain: ");
-//////    Serial.print(gain32, HEX);
-////    print64(gain32, HEX);
-//////    Serial.print("  result: ");
-//////    uint64_t result = uint64_t(lastOut)*(uint64_t(gain32)+1) + (1L << 32); 
-//////    print64(result, HEX);
-////    Serial.print("  postGain: ");
-////    Serial.println(scaled, HEX);   
-////
-////    Serial.print("signed post: ");
-////    Serial.print(makeSigned(scaled));
-////
-////    bool signBit = (lastOut >> 31);
-////    bool negative = signBit == 0;
-////    Serial.print("  signbit: ");
-////    Serial.println(signBit);
-////    
-////    Serial.println();
-//
-//
-////    return scaled;
-//    return makeSigned( scaled );
-//  }
+};
+
+class ModOsc : public SineOsc {
+private:
+  Phasor mod;
+
+  uint32_t hann( uint32_t phase ) { // raised cosine pulse
+    return uint32_t( int64_t(SineTable::lookup(phase - Phasor::_90_DEGREES)) + (1L<<32)-1 );
+  }
+
+public:
+  ModOsc( float srate ) : SineOsc(srate),
+                          mod( srate )
+  {
+    setMod(1.0);
+  }
+   
+  void setMod( float f ) {
+    mod.setFrequency(f);
+  }
+
+  int32_t process() {
+    return _fixedGain( SineOsc::process(), hann( mod.process() ), 32 );
+  }
 
 };
 
+
+//void print64( uint64_t val, int k = DEC) {
+//  uint32_t val_hi = val >> 32;
+//  uint32_t val_lo = val & 0xFFFFFFFF;    
+//  Serial.print(val_hi, k);
+//  Serial.print(val_lo, k);
+//  if(k == HEX && val_lo == 0) {
+//    Serial.print("00000000");
+//  }
+//}
+//
+//void print64( int64_t val, int k = DEC) {
+//  int32_t val_hi = val >> 32;
+//  int32_t val_lo = val & 0xFFFFFFFF;
+//  Serial.print(val_hi, k);
+//  Serial.print(val_lo, k);
+//}
+
+//inline int32_t fixedGain( int32_t a, uint32_t b, size_t bits = 32 ) {
+//  if(DEBUG) {
+//    Serial.print(" ~ fixedGain: ");
+//    Serial.print(int32_t(a), HEX);
+//    Serial.print(" * ");
+//    Serial.print(int32_t(b), HEX);
+//  }
+//  uint64_t result = int64_t(a)*uint64_t(b);
+//  result += (1LL << (bits-1)); // rounding bit
+//  if(DEBUG) {
+//    Serial.print(" multiplied: ");
+//    print64( result, HEX );
+//  }
+//  result >>= bits;
+//  if(DEBUG) {
+//    Serial.print(" shifted: ");
+//    Serial.println(int32_t(result), HEX);
+//  }
+//  return int32_t(result);
+//}
 
 #endif
